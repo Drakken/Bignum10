@@ -3,8 +3,6 @@
  * copyright (c) 2021 Daniel S. Bensen
  *)
 
-open Printf
-
 type comparison = Less | Equal | Greater
 
 let rec ( ** ) x n =
@@ -47,6 +45,8 @@ module Val = struct
     else if n < ceiling2 then unite ~lo:(n mod ceiling1) ~hi:(n / ceiling1)
     else invalid_arg "too big"
 
+  let of_string s = of_int (int_of_string s)
+
   let cmp x y =
     if      x>y then Greater
     else if x<y then Less
@@ -88,7 +88,7 @@ module Val = struct
 
   let half_to_string = string_of_int
 
-  let half_to_padded_string n = sprintf "%0*d" digs_per_half n
+  let half_to_padded_string n = Printf.sprintf "%0*d" digs_per_half n
 
   let to_string n =
     let {hi;lo} = split n in
@@ -178,6 +178,11 @@ let of_int n =
 
 let zero = of_int 0
 let one  = of_int 1
+let minus_one = of_int (-1)
+
+let (~-) = function
+ | Pos,x -> Neg,x
+ | Neg,x -> Pos,x
 
 let (=) (xsign,x) (ysign,y) =
   match (xsign,ysign) with
@@ -233,3 +238,29 @@ let sign_str = function Pos -> "" | Neg -> "-"
 let to_string (sign,x) = sign_str sign ^ Vals.to_string x
 
 let print x = print_string (to_string x)
+
+let of_string s =
+  let open String in
+  let open Stdlib in
+  let digs = s |> trim |> (split_on_char ',') |> (concat "") in
+  let sign,sign_length =
+    match digs.[0] with
+    | '-' -> Neg,1
+    | '+' -> Pos,1
+    |  _  -> Pos,0
+  in
+  let digs_per_val = 2 * Val.digs_per_half
+  and num_digs = length digs - sign_length in
+  let num_full_vals = num_digs  /  digs_per_val
+  and  val1_length  = num_digs mod digs_per_val in
+  let prefix_length = sign_length + val1_length in
+  let n_val n = prefix_length + n * digs_per_val in
+  let val_str n = sub digs n digs_per_val in
+  let full_val_strs = List.(map val_str (init num_full_vals n_val)) in
+  let  all_val_strs =
+    if val1_length = 0 then full_val_strs
+    else (sub digs sign_length val1_length) :: full_val_strs in
+  (sign, List.(rev (map Val.of_string all_val_strs)))
+  
+
+
