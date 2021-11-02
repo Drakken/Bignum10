@@ -52,13 +52,19 @@ module Val = struct
     else if x<y then Less
     else Equal
 
-  let[@inline] do1 op x y ~carry =
-    let z = carry + (op x y) in
+  let[@inline] add1 x y ~carry =
+    let z = carry + x + y in
     { result = z mod ceiling1;
       carry  = z  /  ceiling1 }
 
-  let add1 = do1 ( + )
-  let sub1 = do1 ( - )
+  let[@inline] sub1 x y ~carry =
+    let z = carry + x - y in
+    let result = z mod ceiling1
+    and carry  = z  /  ceiling1 in
+    if z >= 0 || result = 0 then { result; carry }
+    else
+    { result = result + ceiling1;
+      carry  = carry - 1 }
 
   let[@inline] do2 op1 x y ~carry:c0 =
     let { hi=xhi; lo=xlo } = split x
