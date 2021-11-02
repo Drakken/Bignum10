@@ -3,6 +3,8 @@
  * copyright (c) 2021 Daniel S. Bensen
  *)
 
+module Std = Stdlib
+
 type comparison = Less | Equal | Greater
 
 let rec ( ** ) x n =
@@ -52,10 +54,13 @@ module Val = struct
     else if x<y then Less
     else Equal
 
-  let[@inline] add1 x y ~carry =
-    let z = carry + x + y in
+  let[@inline] do1 op x y ~carry =
+    let z = carry + (op x y) in
     { result = z mod ceiling1;
       carry  = z  /  ceiling1 }
+
+  let add1 = do1 ( + )
+  let mul1 = do1 ( * )
 
   let[@inline] sub1 x y ~carry =
     let z = carry + x - y in
@@ -76,11 +81,6 @@ module Val = struct
 
   let add = do2 add1
   let sub = do2 sub1
-
-  let[@inline] mul1 x y ~carry =
-    let prod = carry + x*y in
-    { result = prod mod ceiling1;
-      carry  = prod  /  ceiling1 }
 
   let[@inline] mul x y ~carry:c0 =
     let { hi=xhi; lo=xlo } = split x
@@ -154,7 +154,7 @@ module Vals = struct        (* lists of one or more vals *)
   let ( * ) x y =
     let open Val in
     let rec mul_x acc = function
-    | [] -> acc
+    | [] -> if acc = [0] then [] else acc
     | xn::xns -> 
         let rec mul_y c1 = function
         | [] -> if c1 = 0 then [] else [c1]
@@ -164,6 +164,7 @@ module Vals = struct        (* lists of one or more vals *)
         match acc + mul_y 0 y with
         | [zn] -> zn :: mul_x [0] xns
         | zn::accn -> zn :: mul_x accn xns
+        | [] -> invalid_arg "empty list"
     in mul_x [0] x
 
   let rec to_string = function
@@ -189,15 +190,6 @@ let minus_one = of_int (-1)
 let (~-) = function
  | Pos,x -> Neg,x
  | Neg,x -> Pos,x
-
-let (=) (xsign,x) (ysign,y) =
-  match (xsign,ysign) with
-   | Pos,Neg
-   | Neg,Pos -> false
-   | Pos,Pos
-   | Neg,Neg -> Vals.(x=y)
-
-let (<>) x y = not (x = y)
 
 let (>) (xsign,x) (ysign,y) =
   match (xsign,ysign) with
@@ -239,6 +231,18 @@ let ( * ) (xsign,x) (ysign,y) =
    | Pos,Neg
    | Neg,Pos -> (Neg, x * y)
 
+let rec ( ** ) x n =
+  if Std.(n < 0)  then invalid_arg "negative exponent"
+  else if n = 0  then one
+  else if n = 1  then x
+  else
+  let n2 = Std.(n/2) in
+  if n = Std.(2*n2) then (x*x)**n2
+  else               x * (x*x)**n2
+
+
+(**************** string conversions ****************)
+
 let sign_str = function Pos -> "" | Neg -> "-"
 
 let to_string (sign,x) = sign_str sign ^ Vals.to_string x
@@ -265,7 +269,8 @@ let of_string s =
   let full_val_strs = List.(map val_str (init num_full_vals n_val)) in
   let  all_val_strs =
     if val1_length = 0 then full_val_strs
-    else (sub digs sign_length val1_length) :: full_val_strs in
+    else (sub digs sign_length val1_length) :: full_val_strs
+  in
   (sign, List.(rev (map Val.of_string all_val_strs)))
   
 
