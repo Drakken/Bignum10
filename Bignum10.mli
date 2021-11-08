@@ -6,6 +6,7 @@
 type t
 
 val of_int: int -> t
+val to_int: t -> int
 
 val zero: t
 val one: t
@@ -23,6 +24,8 @@ val ( - ): t -> t -> t
 val ( * ): t -> t -> t
 
 val ( ** ): t -> int -> t
+
+val divmod: t -> t -> t*t
 
 val of_string: string -> t
 val to_string: t -> string

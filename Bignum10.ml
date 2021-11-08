@@ -16,9 +16,11 @@ let rec ( ** ) x n =
 
 module Val = struct
 
+  type t = int
+
   type hilo = { hi: int; lo: int }
 
-  type rzult = { result: int; carry: int }
+  type rzult = { result: t; carry: t }
 
   let bits_per_half =  (Sys.int_size - 1) / 2       (* not counting the sign bit  *)
 
@@ -42,10 +44,17 @@ module Val = struct
   let[@inline] unite ~hi ~lo = lo + shift_left hi
 
   let of_int n =
-    if n < 0 then invalid_arg "negative"
+    if      n < 0        then invalid_arg "negative"
     else if n < ceiling1 then n
-    else if n < ceiling2 then unite ~lo:(n mod ceiling1) ~hi:(n / ceiling1)
+    else if n < ceiling2 then unite ~lo:(n mod ceiling1)
+                                    ~hi:(n  /  ceiling1)
     else invalid_arg "too big"
+
+  let zero = of_int 0
+
+  let to_int n =
+    let {hi;lo} = split n in
+    lo + hi*ceiling1
 
   let of_string s = of_int (int_of_string s)
 
@@ -111,14 +120,25 @@ end
 
 module Vals = struct        (* lists of one or more vals *)
 
+  type t = Val.t list
+
   let of_int n =
     let open Val in
     if n < 0 then invalid_arg "negative"
+    else if n=0 then []
     else if n < ceiling2 then [of_int n]
     else [of_int (n mod ceiling2); n / ceiling2]
 
+  let zero = of_int 0
+
+  let to_int = function
+   | [] -> 0
+   | [n] -> Val.to_int n
+   |  _  -> invalid_arg "too big"
+
   let rec cmp x y =
   match (x,y) with
+   | [],[] -> Equal
    | [xn],[yn] -> Val.cmp xn yn
    | _::_, [] -> Greater
    | [], _::_ -> Less
@@ -129,107 +149,158 @@ module Vals = struct        (* lists of one or more vals *)
                   | Less -> Less 
                   | Equal -> Val.cmp xn yn
                 end
-   | [],[] ->
-      invalid_arg "empty lists"
 
   let (>) x y = cmp x y = Greater
+  let (<) x y = cmp x y = Less
 
-  let do_op op x y =
+  let (+) x y =
    let open Val in
    let rec do_cells a b cin =
     match (a,b) with
     | [],[] -> if cin = 0 then [] else [cin]
     | [],n::ns
     | n::ns,[] -> let { result; carry } = add n 0 ~carry:cin in
-                  if carry = 0 then result::ns 
+                  if carry = 0 then result::ns
                   else result :: (do_cells ns [] carry)
     | nx::nxs,
-      ny::nys -> let { result; carry } = op nx ny ~carry:cin in
+      ny::nys -> let { result; carry } = add nx ny ~carry:cin in
                  result :: do_cells nxs nys carry
    in do_cells x y 0
 
-  let ( + ) = do_op Val.add
-  let ( - ) = do_op Val.sub
+    let (-) x y =
+      let open Val in
+      let rec do_cell nxs nys result cout =
+        let tail = do_cells nxs nys cout in
+        if result = 0 && tail = [] then [] else result :: tail
+      and do_cells a b cin =
+        match (a,b) with
+        | [],[] -> if cin = 0 then [] else [cin]
+        | n::ns,[] ->
+            let { result; carry } = sub n 0 ~carry:cin in
+            if carry <> 0
+            then do_cell ns [] result carry
+            else if result = 0 && ns=[] then []
+            else result::ns
+        | nx::nxs,
+          ny::nys -> let { result; carry } = sub nx ny ~carry:cin in
+                     do_cell nxs nys result carry
+        | [],_ -> invalid_arg "negative sub"
+      in do_cells x y 0
 
   let ( * ) x y =
-    let open Val in
-    let rec mul_x acc = function
-    | [] -> if acc = [0] then [] else acc
-    | xn::xns -> 
-        let rec mul_y c1 = function
-        | [] -> if c1 = 0 then [] else [c1]
-        | yn::yns -> let { result; carry = c2 } = mul xn yn ~carry:c1 in
-                     result :: mul_y c2 yns
-        in 
-        match acc + mul_y 0 y with
-        | [zn] -> zn :: mul_x [0] xns
-        | zn::accn -> zn :: mul_x accn xns
-        | [] -> invalid_arg "empty list"
-    in mul_x [0] x
+    if x=zero || y=zero then zero
+    else
+    let rec do_y xn c1 = function
+      | [] -> if c1 = Val.zero then [] else [c1]
+      | yn::yns ->
+          let open Val in
+          let { result; carry = c2 } = mul xn yn ~carry:c1
+          in result :: do_y xn c2 yns
+    in 
+    let do_xn xn sum = do_y xn Val.zero y + (Val.zero :: sum)
+    in List.fold_right do_xn x zero
 
   let rec to_string = function
+   | [] -> "0"
    | [n] -> Val.to_string n
    | n::ns -> to_string ns ^ Val.to_padded_string n
-   | [] -> invalid_arg "empty list"
+
+let rec dm1 n d cmin cmax minprod =
+  if Std.(cmax-cmin) = 1
+  then ([cmin], n - minprod)
+  else
+  let cmid = Std.((cmin + cmax)/2) in
+  let newprod = [cmid]*d in
+  if newprod > n
+  then dm1 n d cmin cmid minprod
+  else dm1 n d cmid cmax newprod
+
+let rec divmod n d =
+  let d10 = d*[10] in
+  if n < d10 then dm1 n d 0 10 zero
+  else
+  let (q10,r10) = divmod n d10 in
+  let (q1 ,r1 ) = dm1 r10 d 0 10 zero in
+  (q1 + q10*[10], r1)
 
 end
 
-
-type sign = Pos | Neg
+type sign = Pos | Neg | Zero
 
 type t = sign * int list
 
+
 let of_int n =
-  if n<0 then (Neg, Vals.of_int(-n))
-  else        (Pos, Vals.of_int( n))
+  if      n>0 then (Pos, Vals.of_int( n))
+  else if n<0 then (Neg, Vals.of_int(-n))
+  else             (Zero,Vals.of_int( 0))
 
 let zero = of_int 0
 let one  = of_int 1
 let minus_one = of_int (-1)
 
-let (~-) = function
- | Pos,x -> Neg,x
- | Neg,x -> Pos,x
+let to_int (sign,vals) =
+  match sign with
+  | Pos ->   Vals.to_int vals
+  | Neg -> -(Vals.to_int vals)
+  | Zero -> 0
 
-let (>) (xsign,x) (ysign,y) =
-  match (xsign,ysign) with
-   | Pos,Neg -> true
-   | Neg,Pos -> false
-   | Pos,Pos -> Vals.(x>y)
-   | Neg,Neg -> Vals.(y>x)
+let (~-) (sign,vals) =
+  match sign with
+  | Pos -> (Neg,vals)
+  | Neg -> (Pos,vals)
+  | Zero -> zero
+
+let (>) (sx,vx) (sy,vy) =
+  match (sx,sy) with
+   | Pos,Neg | Pos,Zero | Zero,Neg -> true
+   | Neg,Pos | Neg,Zero | Zero,Pos | Zero,Zero -> false
+   | Pos,Pos -> Vals.(vx>vy)
+   | Neg,Neg -> Vals.(vy>vx)
 
 let (<) x y = y > x
 
-let (>=) x y = not (x < y)
+let (>=) x y = not (y > x)
 let (<=) x y = not (x > y)
 
-let (+) (xsign,x) (ysign,y) =
+let (+) ((sx,vx) as x)
+        ((sy,vy) as y) =
   let open Vals in
-  match (xsign,ysign) with
-   | Pos,Pos -> (Pos, x+y)
-   | Neg,Neg -> (Neg, x+y)
-   | Pos,Neg -> if y > x then (Neg, y-x)
-                         else (Pos, x-y)
-   | Neg,Pos -> if x > y then (Neg, x-y)
-                         else (Pos, y-x)
+  match (sx,sy) with
+   | Zero, _ -> y
+   | _, Zero -> x
+   | Pos,Pos -> (Pos, vx+vy)
+   | Neg,Neg -> (Neg, vx+vy)
+   | Pos,Neg -> if      vy>vx then (Neg, vy-vx)
+                else if vx>vy then (Pos, vx-vy)
+                else (Zero,zero)
+   | Neg,Pos -> if      vx>vy then (Neg, vx-vy)
+                else if vy>vx then (Pos, vy-vx)
+                else (Zero,zero)
 
-let (-) (xsign,x) (ysign,y) =
+let (-) ((sx,vx) as x) ((sy,vy) as y) =
   let open Vals in
-  match (xsign,ysign) with
-   | Pos,Neg -> (Pos, x+y)
-   | Neg,Pos -> (Neg, x+y)
-   | Pos,Pos -> if y > x then (Neg, y-x)
-                         else (Pos, x-y)
-   | Neg,Neg -> if x > y then (Neg, x-y)
-                         else (Pos, y-x)
+  match (sx,sy) with
+   | _, Zero -> x
+   | Zero, _ -> ~-y
+   | Pos,Neg -> (Pos, vx+vy)
+   | Neg,Pos -> (Neg, vx+vy)
+   | Pos,Pos -> if      vy>vx then (Neg, vy-vx)
+                else if vx>vy then (Pos, vx-vy)
+                else (Zero,zero)
+   | Neg,Neg -> if      vx>vy then (Neg, vx-vy)
+                else if vy>vx then (Pos, vy-vx)
+                else (Zero,zero)
 
 let ( * ) (xsign,x) (ysign,y) =
   let open Vals in
   match (xsign,ysign) with
+   | Zero, _
+   | _, Zero -> (Zero,zero)
    | Pos,Pos
-   | Neg,Neg -> (Pos, x * y)
+   | Neg,Neg -> (Pos, x*y)
    | Pos,Neg
-   | Neg,Pos -> (Neg, x * y)
+   | Neg,Pos -> (Neg, x*y)
 
 let rec ( ** ) x n =
   if Std.(n < 0)  then invalid_arg "negative exponent"
@@ -240,10 +311,21 @@ let rec ( ** ) x n =
   if n = Std.(2*n2) then (x*x)**n2
   else               x * (x*x)**n2
 
+let divmod (sn,vn) (sd,vd) =
+  if sd = Zero then invalid_arg "division by zero"
+  else if sn = Zero then zero,zero
+  else
+  let (q,r) = Vals.divmod vn vd in
+  match (sn,sd) with
+  | Pos,Pos
+  | Neg,Neg -> (Pos,q),(Pos,r)
+  | Pos,Neg
+  | Neg,Pos -> (Neg,q),(Pos,r)
+  | _,_ -> invalid_arg "zero"
 
 (**************** string conversions ****************)
 
-let sign_str = function Pos -> "" | Neg -> "-"
+let sign_str = function Neg -> "-" | _ -> ""
 
 let to_string (sign,x) = sign_str sign ^ Vals.to_string x
 
