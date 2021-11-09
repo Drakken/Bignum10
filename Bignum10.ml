@@ -154,38 +154,38 @@ module Vals = struct        (* lists of one or more vals *)
   let (<) x y = cmp x y = Less
 
   let (+) x y =
-   let open Val in
-   let rec do_cells a b cin =
-    match (a,b) with
-    | [],[] -> if cin = 0 then [] else [cin]
-    | [],n::ns
-    | n::ns,[] -> let { result; carry } = add n 0 ~carry:cin in
-                  if carry = 0 then result::ns
-                  else result :: (do_cells ns [] carry)
-    | nx::nxs,
-      ny::nys -> let { result; carry } = add nx ny ~carry:cin in
-                 result :: do_cells nxs nys carry
-   in do_cells x y 0
+    let open Val in
+    let rec do_cells a b cin =
+      match (a,b) with
+      | [],[] -> if cin = 0 then [] else [cin]
+      | [],n::ns
+      | n::ns,[] -> let { result; carry=cout } = add n 0 ~carry:cin in
+                    if cout = 0 then result::ns
+                    else result :: (do_cells ns [] cout)
+      | nx::nxs,
+        ny::nys -> let { result; carry=cout } = add nx ny ~carry:cin in
+                   result :: do_cells nxs nys cout
+    in do_cells x y 0
 
-    let (-) x y =
-      let open Val in
-      let rec do_cell nxs nys result cout =
-        let tail = do_cells nxs nys cout in
-        if result = 0 && tail = [] then [] else result :: tail
-      and do_cells a b cin =
-        match (a,b) with
-        | [],[] -> if cin = 0 then [] else [cin]
-        | n::ns,[] ->
-            let { result; carry } = sub n 0 ~carry:cin in
-            if carry <> 0
-            then do_cell ns [] result carry
-            else if result = 0 && ns=[] then []
-            else result::ns
-        | nx::nxs,
-          ny::nys -> let { result; carry } = sub nx ny ~carry:cin in
-                     do_cell nxs nys result carry
-        | [],_ -> invalid_arg "negative sub"
-      in do_cells x y 0
+  let (-) x y =
+    let open Val in
+    let rec do_cell nxs nys result cout =
+      let tail = do_cells nxs nys cout in
+      if result = 0 && tail = [] then [] else result :: tail
+    and do_cells a b cin =
+      match (a,b) with
+      | [],[] -> if cin = 0 then [] else [cin]
+      | n::ns,[] ->
+          let { result; carry } = sub n 0 ~carry:cin in
+          if carry <> 0
+          then do_cell ns [] result carry
+          else if result = 0 && ns=[] then []
+          else result::ns
+      | nx::nxs,
+        ny::nys -> let { result; carry } = sub nx ny ~carry:cin in
+                   do_cell nxs nys result carry
+      | [],_ -> invalid_arg "negative sub"
+    in do_cells x y 0
 
   let ( * ) x y =
     if x=zero || y=zero then zero
@@ -207,21 +207,21 @@ module Vals = struct        (* lists of one or more vals *)
 
 let rec dm1 n d cmin cmax minprod =
   if Std.(cmax-cmin) = 1
-  then ([cmin], n - minprod)
+  then ([Val.of_int cmin], n - minprod)
   else
   let cmid = Std.((cmin + cmax)/2) in
-  let newprod = [cmid]*d in
+  let newprod = [Val.of_int cmid]*d in
   if newprod > n
   then dm1 n d cmin cmid minprod
   else dm1 n d cmid cmax newprod
 
 let rec divmod n d =
-  let d10 = d*[10] in
-  if n < d10 then dm1 n d 0 10 zero
+  let d10 = 0::d in
+  if n < d10 then dm1 n d 0 Val.ceiling2 zero
   else
   let (q10,r10) = divmod n d10 in
-  let (q1 ,r1 ) = dm1 r10 d 0 10 zero in
-  (q1 + q10*[10], r1)
+  let (q1 ,r1 ) = dm1 r10 d 0 Val.ceiling2 zero in
+  (q1 + (0::q10), r1)
 
 end
 
