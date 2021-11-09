@@ -1,4 +1,4 @@
-This is a toy OCaml module for arbitrary-precision integers, written entirely in OCaml.
+This is a toy OCaml module for arbitrary-precision integers, written entirely in OCaml.  
 Its purpose is educational. The Zarith library is recommended for production code.
 
 In this module, integer values are implemented as tuples containing a sign flag and a list of positive ints.  
