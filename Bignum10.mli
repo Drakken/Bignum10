@@ -27,6 +27,9 @@ val ( ** ): t -> int -> t
 
 val divmod: t -> t -> t*t
 
+val ( / ): t -> t -> t
+val (mod): t -> t -> t
+
 val of_string: string -> t
 val to_string: t -> string
 

@@ -4,6 +4,7 @@
  *)
 
 module Std = Stdlib
+module L = List
 
 type comparison = Less | Equal | Greater
 
@@ -198,7 +199,7 @@ module Vals = struct        (* lists of one or more vals *)
           in result :: do_y xn c2 yns
     in 
     let do_xn xn sum = do_y xn Val.zero y + (Val.zero :: sum)
-    in List.fold_right do_xn x zero
+    in L.fold_right do_xn x zero
 
   let rec to_string = function
    | [] -> "0"
@@ -215,13 +216,26 @@ let rec dm1 n d cmin cmax minprod =
   then dm1 n d cmin cmid minprod
   else dm1 n d cmid cmax newprod
 
-let rec divmod n d =
-  let d10 = 0::d in
-  if n < d10 then dm1 n d 0 Val.ceiling2 zero
+let divmod n d =
+ let open Std in
+  let dlen = L.length d in
+  let lendiff = L.length n - dlen in
+  if lendiff < 0 then ([],n)
   else
-  let (q10,r10) = divmod n d10 in
-  let (q1 ,r1 ) = dm1 r10 d 0 Val.ceiling2 zero in
-  (q1 + (0::q10), r1)
+  let rec dm n_diff = function
+    | dig::digs as nn ->
+      if n_diff = 0
+      then dm1 nn d 0 Val.ceiling2 zero
+      else
+      let q10,r10 = dm (n_diff - 1) digs in
+      let n = dig::r10 in
+      if L.length n < dlen then (0::q10, n)
+      else
+      let [q1],r1 = dm1 n d 0 Val.ceiling2 zero in
+      q1::q10, r1
+    | [] -> invalid_arg "too far"
+  in
+  dm lendiff n
 
 end
 
@@ -322,6 +336,9 @@ let divmod (sn,vn) (sd,vd) =
   | Pos,Neg
   | Neg,Pos -> (Neg,q),(Pos,r)
   | _,_ -> invalid_arg "zero"
+
+let ( / ) x y = fst (divmod x y)
+let (mod) x y = snd (divmod x y)
 
 (**************** string conversions ****************)
 
